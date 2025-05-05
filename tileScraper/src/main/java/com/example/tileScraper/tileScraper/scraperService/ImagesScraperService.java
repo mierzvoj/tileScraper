@@ -18,12 +18,12 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 
 @Service
-public class ImagesScraperService implements CommandLineRunner {
+public class ImagesScraperService {
 
-    @Value("${scraper.baseUrl:https://www.google.com/}")
+    @Value("${--url}")
     private String url;
 
-    @Value("${tiles:ceramic tiles}")
+    @Value("${--search}")
     private String searchTerm;
 
     private final ApplicationArguments arguments;
@@ -33,36 +33,6 @@ public class ImagesScraperService implements CommandLineRunner {
         this.arguments = arguments;
     }
 
-    @Override
-    public void run(String... args) throws Exception {
-        try {
-            if (arguments.containsOption("url")) {
-                url = arguments.getOptionValues("url").get(0);
-            }
-
-            if (arguments.containsOption("search")) {
-                searchTerm = arguments.getOptionValues("search").get(0);
-            }
-
-
-            initializeDriver();  // Initialize the driver here
-
-            List<String> productUrls = searchAndGetProductUrls(url, searchTerm);
-
-            System.out.println("Found " + productUrls.size() + " product URLs:");
-            for (String productUrl : productUrls) {  // Renamed to avoid conflict with url field
-                System.out.println(productUrl);
-            }
-
-        } catch (Exception e) {
-            System.err.println("Error during scraping: " + e.getMessage());
-
-        } finally {
-            if (driver != null) {
-                driver.quit();
-            }
-        }
-    }
 
     public List<String> searchAndGetProductUrls(String url, String searchTerm) {
         List<String> productUrls = new ArrayList<>();
