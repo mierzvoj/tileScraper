@@ -61,6 +61,16 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+				<configuration>
+					<!-- plugin configuration -->
+					<jvmArguments>
+						-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005
+					</jvmArguments>
+					<arguments>
+						<argument>--url=https://www.opoczno.eu</argument>
+						<argument>--search=terrazzo</argument>
+					</arguments>
+				</configuration>
 			</plugin>
 		</plugins>
 	</build>

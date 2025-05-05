@@ -44,6 +44,7 @@ public class ImagesScraperService implements CommandLineRunner {
                 searchTerm = arguments.getOptionValues("search").get(0);
             }
 
+
             initializeDriver();  // Initialize the driver here
 
             List<String> productUrls = searchAndGetProductUrls(url, searchTerm);
@@ -110,7 +111,6 @@ public class ImagesScraperService implements CommandLineRunner {
 
         } catch (Exception e) {
             System.err.println("Error during search and scrape: " + e.getMessage());
-            e.printStackTrace();
         }
 
         return productUrls;
