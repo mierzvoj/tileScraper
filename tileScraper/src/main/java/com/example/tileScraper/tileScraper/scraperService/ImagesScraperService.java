@@ -1,10 +1,15 @@
 package com.example.tileScraper.tileScraper.scraperService;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 
+import com.example.tileScraper.tileScraper.utilities.FileUtils;
 import lombok.Setter;
 import org.openqa.selenium.By;
+import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.Keys;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
@@ -15,6 +20,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.Set;
 
 @Service
 public class ImagesScraperService {
@@ -25,10 +31,12 @@ public class ImagesScraperService {
     @Setter
     private String searchTerm;
     private ChromeDriver driver;
+    private final FileUtils fileUtils;
 
     // Use constructor with direct string parameters instead of property injection
-    public ImagesScraperService() {
+    public ImagesScraperService(FileUtils fileUtils) {
         // Empty constructor
+        this.fileUtils = fileUtils;
     }
 
 
@@ -42,6 +50,14 @@ public class ImagesScraperService {
 
             // Do the scraping
             List<String> productUrls = searchAndGetProductUrls();
+
+            // Save the URLs to a file
+            if (!productUrls.isEmpty()) {
+                String filename = fileUtils.createFilenameFromSearchTerm(searchTerm);
+                fileUtils.saveUrlsToFile(productUrls, filename);
+            } else {
+                System.out.println("No URLs found to save");
+            }
 
             // Process results
             System.out.println("Found " + productUrls.size() + " product URLs");
@@ -64,92 +80,163 @@ public class ImagesScraperService {
             System.out.println("Navigating to " + url);
             driver.get(url);
 
-            // Wait longer for page to fully load
-            Thread.sleep(3000);
+            // Wait longer for initial page load
+            Thread.sleep(5000);
 
-            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(15));
+            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(30));
 
-            // Try various selectors for the search box with better waiting
-            WebElement searchBox = null;
+            // Try different search interaction approaches
+            boolean searchSuccessful = false;
+
+            // Approach 1: Use direct JavaScript to submit search
             try {
-                // Try to find the search box using various selectors
-                String[] selectors = {
-                        "input[type='text']",
-                        "input[name='query']",
-                        "input[name='search']",
-                        ".search-input",
-                        "#search",
-                        ".search-field",
-                        "[placeholder*='search']",
-                        "[placeholder*='Search']",
-                        "form input[type='text']"
-                };
+                System.out.println("Trying JavaScript search approach");
+                JavascriptExecutor js = (JavascriptExecutor) driver;
 
-                for (String selector : selectors) {
-                    try {
-                        // First check if element is visible
-                        WebElement element = wait.until(ExpectedConditions.visibilityOfElementLocated(
-                                By.cssSelector(selector)));
+                // This approach bypasses the need to find the search input
+                String script = "var searchForms = document.querySelectorAll('form');" +
+                        "for(var i=0; i < searchForms.length; i++) {" +
+                        "  var inputs = searchForms[i].querySelectorAll('input[type=\"text\"], input[type=\"search\"]');" +
+                        "  if(inputs.length > 0) {" +
+                        "    inputs[0].value = '" + searchTerm + "';" +
+                        "    searchForms[i].submit();" +
+                        "    return true;" +
+                        "  }" +
+                        "}" +
+                        "return false;";
 
-                        // Then check if it's clickable
-                        element = wait.until(ExpectedConditions.elementToBeClickable(
-                                By.cssSelector(selector)));
+                Boolean result = (Boolean) js.executeScript(script);
+                if (result) {
+                    System.out.println("JavaScript search successful");
+                    searchSuccessful = true;
+                    Thread.sleep(5000); // Wait for results to load
+                }
+            } catch (Exception e) {
+                System.out.println("JavaScript search approach failed: " + e.getMessage());
+            }
 
-                        searchBox = element;
-                        System.out.println("Found search box with selector: " + selector);
-                        break;
-                    } catch (Exception e) {
-                        // Continue to next selector
+            // Approach 2: Try to find and interact with search icon first
+            if (!searchSuccessful) {
+                try {
+                    System.out.println("Trying search icon approach");
+                    // Find a search icon/button - common in many sites
+                    WebElement searchIcon = wait.until(ExpectedConditions.elementToBeClickable(
+                            By.cssSelector("[class*='search-icon'], [class*='search-btn'], [id*='search-btn'], button[aria-label*='Search']")));
+
+                    // Use JavaScript to click the search icon
+                    ((JavascriptExecutor) driver).executeScript("arguments[0].click();", searchIcon);
+                    System.out.println("Clicked search icon");
+                    Thread.sleep(3000); // Wait for search field to appear
+
+                    // Now find the input that appeared
+                    WebElement searchInput = wait.until(ExpectedConditions.elementToBeClickable(
+                            By.cssSelector("input[type='text'], input[type='search'], input[placeholder*='search'], input[placeholder*='Search']")));
+
+                    // Use JavaScript to set value and submit
+                    ((JavascriptExecutor) driver).executeScript("arguments[0].value = arguments[1];", searchInput, searchTerm);
+                    searchInput.sendKeys(Keys.ENTER);
+
+                    System.out.println("Entered search term via search icon approach");
+                    searchSuccessful = true;
+                    Thread.sleep(5000); // Wait for results to load
+                } catch (Exception e) {
+                    System.out.println("Search icon approach failed: " + e.getMessage());
+                }
+            }
+
+            // Approach 3: Navigate directly to search URL if possible
+            if (!searchSuccessful) {
+                try {
+                    System.out.println("Trying direct search URL approach");
+                    // Many sites have a search URL pattern - attempt with common formats
+                    String searchUrl = url;
+                    if (!searchUrl.endsWith("/")) {
+                        searchUrl += "/";
                     }
+
+                    // Try common search URL patterns
+                    String encodedSearchTerm = URLEncoder.encode(searchTerm, StandardCharsets.UTF_8.toString());
+                    String directSearchUrl = searchUrl + "search?q=" + encodedSearchTerm;
+
+                    System.out.println("Navigating to direct search URL: " + directSearchUrl);
+                    driver.get(directSearchUrl);
+
+                    Thread.sleep(5000); // Wait for results to load
+                    searchSuccessful = true;
+                } catch (Exception e) {
+                    System.out.println("Direct search URL approach failed: " + e.getMessage());
                 }
-            } catch (Exception e) {
-                System.err.println("Could not find search box with any selector: " + e.getMessage());
-                throw e;
             }
 
-            if (searchBox == null) {
-                throw new RuntimeException("Could not find search box element with any selector");
+            // If none of the approaches worked, we can't proceed
+            if (!searchSuccessful) {
+                throw new RuntimeException("Could not perform search using any approach");
             }
 
-            // Try to click on the search box first to ensure it's focused
-            searchBox.click();
-            Thread.sleep(500);
+            // Now look for search results
+            System.out.println("Looking for search results");
 
-            // Try alternative clear approach instead of clear()
-            searchBox.sendKeys(Keys.CONTROL + "a");
-            searchBox.sendKeys(Keys.DELETE);
+            // Take a screenshot to help debug
+            // File screenshot = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
+            // Files.copy(screenshot.toPath(), new File("search_results.png").toPath(), StandardCopyOption.REPLACE_EXISTING);
 
-            // Enter search term
-            searchBox.sendKeys(searchTerm);
-            searchBox.sendKeys(Keys.ENTER);
+            // Get page source for debugging
+            // String pageSource = driver.getPageSource();
+            // Files.write(new File("page_source.html").toPath(), pageSource.getBytes(StandardCharsets.UTF_8));
 
-            // Wait for search results to load with a more general selector
+            // Wait for results and scroll
             try {
-                wait.until(ExpectedConditions.presenceOfElementLocated(
-                        By.cssSelector(".product, .product-card, article, .results, .search-results")));
+                Thread.sleep(2000);
+                scrollToLoadAllResults();
             } catch (Exception e) {
-                System.out.println("Could not detect specific result elements, continuing anyway");
+                System.out.println("Error during scrolling: " + e.getMessage());
             }
 
-            // Allow more time for results to load
-            Thread.sleep(3000);
+            // Try different selectors for finding product links
+            List<WebElement> productElements = new ArrayList<>();
 
-            // Scroll down to load all results
-            scrollToLoadAllResults();
+            String[] resultSelectors = {
+                    ".result a",
+                    ".search-result a",
+                    ".title a",
+                    "h3.title a",
+                    ".product-item a",
+                    "[class*='product'] a",
+                    "[class*='result'] a",
+                    "a[href*='product']",
+                    "a[href*='item']"
+            };
 
-            // Find all product links with a more comprehensive selector
-            List<WebElement> productElements = driver.findElements(
-                    By.cssSelector("a[href*='product'], a[href*='p-'], a[href*='item'], .product a, .product-card a, article a"));
-
-            // Extract and store URLs
-            for (WebElement element : productElements) {
-                String href = element.getAttribute("href");
-                if (href != null && !href.isEmpty() && !productUrls.contains(href)) {
-                    productUrls.add(href);
+            for (String selector : resultSelectors) {
+                try {
+                    List<WebElement> elements = driver.findElements(By.cssSelector(selector));
+                    if (!elements.isEmpty()) {
+                        System.out.println("Found " + elements.size() + " elements with selector: " + selector);
+                        productElements.addAll(elements);
+                    }
+                } catch (Exception e) {
+                    System.out.println("Error finding elements with selector " + selector + ": " + e.getMessage());
                 }
             }
 
-            System.out.println("Scraped " + productUrls.size() + " product URLs");
+            System.out.println("Found total of " + productElements.size() + " potential product links");
+
+            // Extract URLs (with deduplication)
+            Set<String> uniqueUrls = new HashSet<>();
+
+            for (WebElement element : productElements) {
+                try {
+                    String href = element.getAttribute("href");
+                    if (href != null && !href.isEmpty() && !uniqueUrls.contains(href)) {
+                        uniqueUrls.add(href);
+                    }
+                } catch (Exception e) {
+                    // Ignore elements that can't be processed
+                }
+            }
+
+            productUrls.addAll(uniqueUrls);
+            System.out.println("Added " + productUrls.size() + " unique product URLs");
 
         } catch (Exception e) {
             System.err.println("Error during search and scrape: " + e.getMessage());
