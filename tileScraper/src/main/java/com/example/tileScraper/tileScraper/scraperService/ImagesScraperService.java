@@ -3,6 +3,7 @@ package com.example.tileScraper.tileScraper.scraperService;
 import java.util.ArrayList;
 import java.util.List;
 
+import lombok.Setter;
 import org.openqa.selenium.By;
 import org.openqa.selenium.Keys;
 import org.openqa.selenium.WebElement;
@@ -11,8 +12,6 @@ import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.ApplicationArguments;
-import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -20,60 +19,133 @@ import java.time.Duration;
 @Service
 public class ImagesScraperService {
 
-    @Value("${--url}")
+    // Setter methods for URL and search term
+    @Setter
     private String url;
-
-    @Value("${--search}")
+    @Setter
     private String searchTerm;
-
-    private final ApplicationArguments arguments;
     private ChromeDriver driver;
 
-    public ImagesScraperService(ApplicationArguments arguments) {
-        this.arguments = arguments;
+    // Use constructor with direct string parameters instead of property injection
+    public ImagesScraperService() {
+        // Empty constructor
     }
 
 
-    public List<String> searchAndGetProductUrls(String url, String searchTerm) {
+
+    public void scrape() {
+        try {
+            System.out.println("Starting scraping with URL: " + url + ", Search term: " + searchTerm);
+
+            // Initialize the browser
+            initializeDriver();
+
+            // Do the scraping
+            List<String> productUrls = searchAndGetProductUrls();
+
+            // Process results
+            System.out.println("Found " + productUrls.size() + " product URLs");
+
+            // Close the browser when done
+            if (driver != null) {
+                driver.quit();
+            }
+
+        } catch (Exception e) {
+            System.err.println("Error in scraping process: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    // The rest of your methods remain the same
+    public List<String> searchAndGetProductUrls() {
         List<String> productUrls = new ArrayList<>();
         try {
             System.out.println("Navigating to " + url);
             driver.get(url);
 
-            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));
-            WebElement searchBox = wait.until(ExpectedConditions.elementToBeClickable(
-                    By.cssSelector(
-                            "input[type='text'], input[name='query'], input[name='search'], .search-input, #search")));
-            // Clear any existing text and enter search term
-            searchBox.clear();
+            // Wait longer for page to fully load
+            Thread.sleep(3000);
+
+            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(15));
+
+            // Try various selectors for the search box with better waiting
+            WebElement searchBox = null;
+            try {
+                // Try to find the search box using various selectors
+                String[] selectors = {
+                        "input[type='text']",
+                        "input[name='query']",
+                        "input[name='search']",
+                        ".search-input",
+                        "#search",
+                        ".search-field",
+                        "[placeholder*='search']",
+                        "[placeholder*='Search']",
+                        "form input[type='text']"
+                };
+
+                for (String selector : selectors) {
+                    try {
+                        // First check if element is visible
+                        WebElement element = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                                By.cssSelector(selector)));
+
+                        // Then check if it's clickable
+                        element = wait.until(ExpectedConditions.elementToBeClickable(
+                                By.cssSelector(selector)));
+
+                        searchBox = element;
+                        System.out.println("Found search box with selector: " + selector);
+                        break;
+                    } catch (Exception e) {
+                        // Continue to next selector
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Could not find search box with any selector: " + e.getMessage());
+                throw e;
+            }
+
+            if (searchBox == null) {
+                throw new RuntimeException("Could not find search box element with any selector");
+            }
+
+            // Try to click on the search box first to ensure it's focused
+            searchBox.click();
+            Thread.sleep(500);
+
+            // Try alternative clear approach instead of clear()
+            searchBox.sendKeys(Keys.CONTROL + "a");
+            searchBox.sendKeys(Keys.DELETE);
+
+            // Enter search term
             searchBox.sendKeys(searchTerm);
             searchBox.sendKeys(Keys.ENTER);
 
-            // Wait for search results to load
-            // Adjust selector based on actual website structure
-            wait.until(ExpectedConditions.presenceOfElementLocated(
-                    By.cssSelector(".title-module, .product-card, .product, article")));
+            // Wait for search results to load with a more general selector
+            try {
+                wait.until(ExpectedConditions.presenceOfElementLocated(
+                        By.cssSelector(".product, .product-card, article, .results, .search-results")));
+            } catch (Exception e) {
+                System.out.println("Could not detect specific result elements, continuing anyway");
+            }
 
-            // Allow some extra time for any dynamic content to load
-            Thread.sleep(2000);
+            // Allow more time for results to load
+            Thread.sleep(3000);
 
-            // Scroll down to load all results if needed (for pages with lazy loading)
+            // Scroll down to load all results
             scrollToLoadAllResults();
 
-            // Find all product links
-            // Adjust selector based on actual website structure
+            // Find all product links with a more comprehensive selector
             List<WebElement> productElements = driver.findElements(
-                    By.cssSelector(".product-item a, .product-card a, .product a, article a"));
+                    By.cssSelector("a[href*='product'], a[href*='p-'], a[href*='item'], .product a, .product-card a, article a"));
 
             // Extract and store URLs
             for (WebElement element : productElements) {
                 String href = element.getAttribute("href");
                 if (href != null && !href.isEmpty() && !productUrls.contains(href)) {
-                    // Only add product detail pages (usually contains 'product' or 'p-' in URL)
-                    // Adjust this filter based on the actual URL patterns of the site
-                    if (href.contains("product") || href.contains("p-") || href.contains("item")) {
-                        productUrls.add(href);
-                    }
+                    productUrls.add(href);
                 }
             }
 
@@ -81,12 +153,13 @@ public class ImagesScraperService {
 
         } catch (Exception e) {
             System.err.println("Error during search and scrape: " + e.getMessage());
+            e.printStackTrace();
         }
 
         return productUrls;
     }
 
-    private void initializeDriver() {  // Method names should start with lowercase
+    private void initializeDriver() {
         ChromeOptions options = new ChromeOptions();
 
         // To avoid detection as a bot
@@ -96,9 +169,6 @@ public class ImagesScraperService {
         options.addArguments("--disable-blink-features=AutomationControlled");
 
         driver = new ChromeDriver(options);
-
-        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));  // Fixed variable declaration
-
         driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(10));
     }
 

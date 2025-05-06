@@ -1,49 +1,40 @@
 package com.example.tileScraper.tileScraper;
 
-import com.example.tileScraper.tileScraper.appConfig.AppConfig;
-import com.example.tileScraper.tileScraper.scraperService.ImagesScraperService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
+import com.example.tileScraper.tileScraper.scraperService.ImagesScraperService;
+import org.springframework.context.annotation.ComponentScan;
+
 @SpringBootApplication
+@ComponentScan(basePackages = {"com.example.tileScraper"})
 public class TileScraperApplication implements CommandLineRunner {
 
-    private final ImagesScraperService scraperService;
+    private final ImagesScraperService imagesScraperService;
 
-    // Constructor injection for your service
     @Autowired
-    public TileScraperApplication(ImagesScraperService scraperService) {
-        this.scraperService = scraperService;
+    public TileScraperApplication(ImagesScraperService imagesScraperService) {
+        this.imagesScraperService = imagesScraperService;
     }
 
     public static void main(String[] args) {
-        SpringApplication.run(TileScraperApplication.class, args);
+        SpringApplication app = new SpringApplication(TileScraperApplication.class);
+        app.run(args);
     }
 
     @Override
     public void run(String... args) {
-        String url = null;
-        String search = null;
+        // Parse command-line arguments manually
+        String url = System.getProperty("url", "https://www.opoczno.eu");
+        String search = System.getProperty("search", "terrazzo");
 
-        // Parse command line arguments manually
-        for (String arg : args) {
-            if (arg.startsWith("--url=")) {
-                url = arg.substring(6);
-            } else if (arg.startsWith("--search=")) {
-                search = arg.substring(9);
-            }
-        }
+        // Set the values in the service
+        imagesScraperService.setUrl(url);
+        imagesScraperService.setSearchTerm(search);
 
-        System.out.println("URL: " + url);
-        System.out.println("Search: " + search);
-
-        // Call your service with the parsed arguments
-        if (url != null && search != null) {
-            scraperService.searchAndGetProductUrls(url, search);
-        } else {
-            System.err.println("Missing required arguments: url and/or search");
-        }
+        // Start the scraping process
+        imagesScraperService.scrape();
     }
 }

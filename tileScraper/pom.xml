@@ -69,14 +69,12 @@
                         -Durl=https://www.opoczno.eu
                         -Dsearch=terrazzo
                     </jvmArguments>
-
-                    <arguments>
-<!--                        <argument>url=https://www.opoczno.eu</argument>-->
-<!--                        <argument>search=terrazzo</argument>-->
-                    </arguments>
+                    <!--                    <arguments>-->
+                    <!--                        <argument>&#45;&#45;url=https://www.opoczno.eu</argument>-->
+                    <!--                        <argument>&#45;&#45;search=terrazzo</argument>-->
+                    <!--                    </arguments>-->
                 </configuration>
             </plugin>
         </plugins>
     </build>
-
 </project>
